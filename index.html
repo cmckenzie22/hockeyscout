@@ -142,7 +142,7 @@
     }
     .add-btn:active { filter: brightness(0.92); }
 
-    .import-btn {
+    .import-btn, .export-btn {
       display: flex;
       align-items: center;
       justify-content: center;
@@ -159,7 +159,33 @@
       transition: filter 0.1s;
       white-space: nowrap;
     }
-    .import-btn:active { filter: brightness(0.94); }
+    .import-btn:active, .export-btn:active { filter: brightness(0.94); }
+
+    .export-hint {
+      font-size: 0.85rem;
+      color: var(--muted);
+      margin-bottom: 18px;
+      line-height: 1.5;
+    }
+    .format-btns { display: flex; gap: 10px; margin-bottom: 14px; }
+    .format-btn {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      padding: 18px 12px;
+      background: var(--bg);
+      border: 1.5px solid var(--border);
+      border-radius: 14px;
+      cursor: pointer;
+      font-family: inherit;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .format-btn:active { background: var(--border); }
+    .format-icon { font-size: 2rem; }
+    .format-name { font-size: 1rem; font-weight: 700; color: var(--text); }
+    .format-desc { font-size: 0.75rem; color: var(--muted); }
 
     .eval-summary {
       background: var(--navy);
@@ -608,6 +634,7 @@
     <div class="roster-actions">
       <button class="add-btn" onclick="openAddModal()">＋ Add Player</button>
       <button class="import-btn" onclick="openImportModal()">↓ Import</button>
+      <button class="export-btn" onclick="openExportModal()">↑ Export</button>
     </div>
     <div class="sort-bar">
       <span class="sort-label">Sort:</span>
@@ -757,6 +784,29 @@
   </div>
 </div>
 
+<!-- ════════════════════════════ EXPORT MODAL -->
+<div class="modal-bg" id="export-modal" onclick="onExportBgClick(event)">
+  <div class="modal-sheet">
+    <div class="modal-title">Export Roster</div>
+    <p class="export-hint">Download all player data in the current sort order.</p>
+    <div class="format-btns">
+      <button class="format-btn" onclick="exportData('csv')">
+        <div class="format-icon">📊</div>
+        <div class="format-name">CSV</div>
+        <div class="format-desc">Excel &amp; Google Sheets</div>
+      </button>
+      <button class="format-btn" onclick="exportData('txt')">
+        <div class="format-icon">📄</div>
+        <div class="format-name">TXT</div>
+        <div class="format-desc">Plain text file</div>
+      </button>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeExportModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <!-- ═════════════════════════ CONFIRM DELETE DIALOG -->
 <div class="confirm-bg" id="confirm-modal">
   <div class="confirm-dialog">
@@ -771,6 +821,14 @@
 
 <script>
 const EVAL_KEYS = ['skating','shooting','passing','checking','positioning','compete'];
+const EVAL_LABELS = {
+  skating:     'Skating',
+  shooting:    'Shooting',
+  passing:     'Passing',
+  checking:    'Checking',
+  positioning: 'Positioning',
+  compete:     'Compete Level'
+};
 const STORE_KEY = 'hockeyscout_v1';
 
 let players = [];
@@ -829,6 +887,21 @@ function getAggregate(player) {
   const rated = EVAL_KEYS.map(k => player.evaluations[k]).filter(v => v > 0);
   if (!rated.length) return null;
   return { avg: (rated.reduce((a,b) => a+b, 0) / rated.length).toFixed(1), count: rated.length };
+}
+
+function sortComparator(a, b) {
+  if (!!b.starred !== !!a.starred) return b.starred ? 1 : -1;
+  if (sortField === 'rating') {
+    const aggA = getAggregate(a);
+    const aggB = getAggregate(b);
+    if (!aggA && !aggB) return a.name.localeCompare(b.name);
+    if (!aggA) return 1;
+    if (!aggB) return -1;
+    const cmp = parseFloat(aggA.avg) - parseFloat(aggB.avg);
+    return sortDir === 'asc' ? cmp : -cmp;
+  }
+  const cmp = a.name.localeCompare(b.name);
+  return sortDir === 'asc' ? cmp : -cmp;
 }
 
 function setSort(field) {
@@ -898,20 +971,7 @@ function renderRoster() {
     return;
   }
   renderSortBar();
-  list.innerHTML = [...players].sort((a, b) => {
-    if (!!b.starred !== !!a.starred) return b.starred ? 1 : -1;
-    if (sortField === 'rating') {
-      const aggA = getAggregate(a);
-      const aggB = getAggregate(b);
-      if (!aggA && !aggB) return a.name.localeCompare(b.name);
-      if (!aggA) return 1;
-      if (!aggB) return -1;
-      const cmp = parseFloat(aggA.avg) - parseFloat(aggB.avg);
-      return sortDir === 'asc' ? cmp : -cmp;
-    }
-    const cmp = a.name.localeCompare(b.name);
-    return sortDir === 'asc' ? cmp : -cmp;
-  }).map(p => {
+  list.innerHTML = [...players].sort(sortComparator).map(p => {
     const agg = getAggregate(p);
     const chip = agg
       ? `<div class="score-chip">${toGrade(parseFloat(agg.avg))}</div>`
@@ -1133,6 +1193,46 @@ function confirmDelete() {
   persist();
   closeConfirm();
   renderRoster();
+}
+
+// ── Export ────────────────────────────────────────────
+function csvEsc(val) {
+  const s = String(val == null ? '' : val);
+  return (s.includes(',') || s.includes('"') || s.includes('\n'))
+    ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+function exportData(ext) {
+  const headers = ['Player Name', 'Position', 'Grade', ...EVAL_KEYS.map(k => EVAL_LABELS[k])];
+  const rows = [...players].sort(sortComparator).map(p => {
+    const agg   = getAggregate(p);
+    const grade = agg ? toGrade(parseFloat(agg.avg)) : '';
+    const scores = EVAL_KEYS.map(k => p.evaluations[k] > 0 ? p.evaluations[k] : '');
+    return [csvEsc(p.name), csvEsc(p.position || ''), grade, ...scores].join(',');
+  });
+  const content = [headers.join(','), ...rows].join('\r\n');
+  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = `hockey-roster.${ext}`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  closeExportModal();
+}
+
+function openExportModal() {
+  document.getElementById('export-modal').classList.add('open');
+}
+
+function closeExportModal() {
+  document.getElementById('export-modal').classList.remove('open');
+}
+
+function onExportBgClick(e) {
+  if (e.target === e.currentTarget) closeExportModal();
 }
 
 // ── Service Worker ────────────────────────────────────
