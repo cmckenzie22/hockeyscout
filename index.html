@@ -597,7 +597,7 @@
 
       <div class="eval-row">
         <div class="eval-header">
-          <span class="eval-label">Shooting</span>
+          <span class="eval-label" id="label-shooting">Shooting</span>
           <span class="eval-val unrated" id="val-shooting">Not rated</span>
         </div>
         <input type="range" min="0" max="5" step="1" value="0" id="sl-shooting"
@@ -617,7 +617,7 @@
 
       <div class="eval-row">
         <div class="eval-header">
-          <span class="eval-label">Checking</span>
+          <span class="eval-label" id="label-checking">Checking</span>
           <span class="eval-val unrated" id="val-checking">Not rated</span>
         </div>
         <input type="range" min="0" max="5" step="1" value="0" id="sl-checking"
@@ -732,6 +732,16 @@ function esc(s) {
 
 function getPlayer(id) { return players.find(p => p.id === id); }
 
+function isGoalie(pos) {
+  return /^(g|goalie|goaltender)$/i.test((pos || '').trim());
+}
+
+function updateEvalLabels(pos) {
+  const goalie = isGoalie(pos);
+  document.getElementById('label-shooting').textContent = goalie ? 'Reflexes'       : 'Shooting';
+  document.getElementById('label-checking').textContent = goalie ? 'Rebound Control' : 'Checking';
+}
+
 function getAggregate(player) {
   const rated = EVAL_KEYS.map(k => player.evaluations[k]).filter(v => v > 0);
   if (!rated.length) return null;
@@ -766,7 +776,7 @@ function renderRoster() {
       </div>`;
     return;
   }
-  list.innerHTML = players.map(p => {
+  list.innerHTML = [...players].sort((a, b) => a.name.localeCompare(b.name)).map(p => {
     const agg = getAggregate(p);
     const chip = agg
       ? `<div class="score-chip">${agg.avg}</div>`
@@ -808,9 +818,10 @@ function openPlayer(id) {
 
   refreshAgg(p);
   setSaveNote('idle');
+  updateEvalLabels(p.position);
 
   document.getElementById('edit-name').oninput = () => onNameEdit();
-  document.getElementById('edit-pos').oninput  = () => schedSave();
+  document.getElementById('edit-pos').oninput  = () => { updateEvalLabels(document.getElementById('edit-pos').value); schedSave(); };
 }
 
 function goBack() {
