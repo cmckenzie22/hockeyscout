@@ -79,6 +79,43 @@
     /* ── Roster View ─────────────────────────────────── */
     .roster-body { padding: 16px; }
 
+    .sort-bar {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 14px;
+    }
+    .sort-label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      margin-right: 2px;
+      flex-shrink: 0;
+    }
+    .sort-btn {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      padding: 7px 13px;
+      background: var(--card);
+      border: 1.5px solid var(--border);
+      border-radius: 20px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      font-family: inherit;
+      color: var(--muted);
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s, color 0.15s;
+      white-space: nowrap;
+    }
+    .sort-btn.active {
+      background: var(--navy);
+      border-color: var(--navy);
+      color: #fff;
+    }
+
     .roster-actions {
       display: flex;
       gap: 10px;
@@ -226,6 +263,33 @@
       cursor: pointer;
       line-height: 1;
     }
+
+    .star-btn {
+      flex-shrink: 0;
+      background: none;
+      border: 1.5px solid var(--border);
+      color: var(--muted);
+      border-radius: 8px;
+      padding: 5px 9px;
+      font-size: 1.05rem;
+      cursor: pointer;
+      line-height: 1;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .star-btn.starred { color: #f0a800; border-color: #f0a800; }
+
+    .star-hdr-btn {
+      background: none;
+      border: none;
+      color: rgba(255,255,255,0.35);
+      font-size: 1.7rem;
+      cursor: pointer;
+      line-height: 1;
+      padding: 0 0 0 4px;
+      flex-shrink: 0;
+      transition: color 0.15s;
+    }
+    .star-hdr-btn.starred { color: #f0a800; }
 
     /* ── Player Detail View ──────────────────────────── */
     .detail-body { padding: 14px; padding-bottom: 48px; }
@@ -545,6 +609,12 @@
       <button class="add-btn" onclick="openAddModal()">＋ Add Player</button>
       <button class="import-btn" onclick="openImportModal()">↓ Import</button>
     </div>
+    <div class="sort-bar">
+      <span class="sort-label">Sort:</span>
+      <button class="sort-btn active" id="sort-btn-name"   onclick="setSort('name')">Name <span id="sort-dir-name">↑</span></button>
+      <button class="sort-btn"        id="sort-btn-rating" onclick="setSort('rating')">Rating <span id="sort-dir-rating"></span></button>
+    </div>
+
     <div class="eval-summary" id="eval-summary" style="display:none">
       <div class="eval-summary-icon">📋</div>
       <div class="eval-summary-text">
@@ -564,6 +634,7 @@
       <div class="header-eyebrow">Player Profile</div>
       <div class="header-title" id="hdr-name">Player</div>
     </div>
+    <button class="star-hdr-btn" id="star-hdr-btn" onclick="toggleStarDetail()" aria-label="Favourite player">☆</button>
   </header>
   <div class="detail-body">
 
@@ -576,7 +647,7 @@
       </div>
       <div class="agg-display">
         <div class="agg-number" id="agg-number">—</div>
-        <div class="agg-label">/ 5.0</div>
+        <div class="agg-label">GRADE</div>
         <div class="agg-rated" id="agg-rated"></div>
       </div>
     </div>
@@ -706,6 +777,8 @@ let players = [];
 let currentId = null;
 let pendingDeleteId = null;
 let saveTimer = null;
+let sortField = 'name';
+let sortDir   = 'asc';
 
 // ── Storage ──────────────────────────────────────────
 function load() {
@@ -743,10 +816,57 @@ function updateEvalLabels(pos) {
   document.getElementById('row-passing').style.display  = goalie ? 'none'           : '';
 }
 
+function toGrade(avg) {
+  if (avg >= 4.5) return 'A+';
+  if (avg >= 4.0) return 'A';
+  if (avg >= 3.5) return 'B+';
+  if (avg >= 3.0) return 'B';
+  if (avg >= 2.0) return 'C';
+  return 'D';
+}
+
 function getAggregate(player) {
   const rated = EVAL_KEYS.map(k => player.evaluations[k]).filter(v => v > 0);
   if (!rated.length) return null;
   return { avg: (rated.reduce((a,b) => a+b, 0) / rated.length).toFixed(1), count: rated.length };
+}
+
+function setSort(field) {
+  if (sortField === field) {
+    sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+  } else {
+    sortField = field;
+    sortDir = 'asc';
+  }
+  renderRoster();
+}
+
+function renderSortBar() {
+  ['name', 'rating'].forEach(field => {
+    const btn   = document.getElementById('sort-btn-' + field);
+    const arrow = document.getElementById('sort-dir-' + field);
+    const active = sortField === field;
+    btn.className       = active ? 'sort-btn active' : 'sort-btn';
+    arrow.textContent   = active ? (sortDir === 'asc' ? '↑' : '↓') : '';
+  });
+}
+
+function toggleStar(id) {
+  const p = getPlayer(id);
+  if (!p) return;
+  p.starred = !p.starred;
+  persist();
+  renderRoster();
+}
+
+function toggleStarDetail() {
+  const p = getPlayer(currentId);
+  if (!p) return;
+  p.starred = !p.starred;
+  persist();
+  const btn = document.getElementById('star-hdr-btn');
+  btn.textContent = p.starred ? '★' : '☆';
+  btn.className   = p.starred ? 'star-hdr-btn starred' : 'star-hdr-btn';
 }
 
 // ── Roster View ──────────────────────────────────────
@@ -777,12 +897,28 @@ function renderRoster() {
       </div>`;
     return;
   }
-  list.innerHTML = [...players].sort((a, b) => a.name.localeCompare(b.name)).map(p => {
+  renderSortBar();
+  list.innerHTML = [...players].sort((a, b) => {
+    if (!!b.starred !== !!a.starred) return b.starred ? 1 : -1;
+    if (sortField === 'rating') {
+      const aggA = getAggregate(a);
+      const aggB = getAggregate(b);
+      if (!aggA && !aggB) return a.name.localeCompare(b.name);
+      if (!aggA) return 1;
+      if (!aggB) return -1;
+      const cmp = parseFloat(aggA.avg) - parseFloat(aggB.avg);
+      return sortDir === 'asc' ? cmp : -cmp;
+    }
+    const cmp = a.name.localeCompare(b.name);
+    return sortDir === 'asc' ? cmp : -cmp;
+  }).map(p => {
     const agg = getAggregate(p);
     const chip = agg
-      ? `<div class="score-chip">${agg.avg}</div>`
+      ? `<div class="score-chip">${toGrade(parseFloat(agg.avg))}</div>`
       : `<div class="score-chip unrated">—</div>`;
     const pos = p.position ? `<div class="card-position">${esc(p.position)}</div>` : '';
+    const starClass = p.starred ? 'star-btn starred' : 'star-btn';
+    const starIcon  = p.starred ? '★' : '☆';
     return `
       <div class="player-card" onclick="openPlayer('${p.id}')">
         <div class="avatar">${esc(initials(p.name))}</div>
@@ -791,6 +927,7 @@ function renderRoster() {
           ${pos}
         </div>
         ${chip}
+        <button class="${starClass}" onclick="event.stopPropagation(); toggleStar('${p.id}')" aria-label="Favourite player">${starIcon}</button>
         <button class="del-btn" onclick="event.stopPropagation(); promptDelete('${p.id}')" aria-label="Remove player">✕</button>
       </div>`;
   }).join('');
@@ -820,6 +957,9 @@ function openPlayer(id) {
   refreshAgg(p);
   setSaveNote('idle');
   updateEvalLabels(p.position);
+  const starBtn = document.getElementById('star-hdr-btn');
+  starBtn.textContent = p.starred ? '★' : '☆';
+  starBtn.className   = p.starred ? 'star-hdr-btn starred' : 'star-hdr-btn';
 
   document.getElementById('edit-name').oninput = () => onNameEdit();
   document.getElementById('edit-pos').oninput  = () => { updateEvalLabels(document.getElementById('edit-pos').value); schedSave(); };
@@ -870,8 +1010,8 @@ function refreshSlider(el, key, val) {
 
 function refreshAgg(p) {
   const agg = getAggregate(p);
-  document.getElementById('agg-number').textContent = agg ? agg.avg : '—';
-  document.getElementById('agg-rated').textContent  = agg ? `${agg.count}/6 rated` : '';
+  document.getElementById('agg-number').textContent = agg ? toGrade(parseFloat(agg.avg)) : '—';
+  document.getElementById('agg-rated').textContent  = agg ? `${agg.count}/${EVAL_KEYS.length} rated` : '';
 }
 
 // ── Auto-save ─────────────────────────────────────────
@@ -944,6 +1084,7 @@ function confirmImport() {
       id: uid(),
       name,
       position: '',
+      starred: false,
       evaluations: Object.fromEntries(EVAL_KEYS.map(k => [k, 0])),
       notes: ''
     });
@@ -961,6 +1102,7 @@ function confirmAdd() {
     id: uid(),
     name,
     position,
+    starred: false,
     evaluations: Object.fromEntries(EVAL_KEYS.map(k => [k, 0])),
     notes: ''
   };
